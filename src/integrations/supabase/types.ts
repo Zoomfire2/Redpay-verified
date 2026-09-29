@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      admin_activity_log: {
+        Row: {
+          action: string
+          admin_id: string
+          admin_label: string | null
+          amount: number | null
+          created_at: string
+          details: Json | null
+          id: string
+          target_label: string | null
+          target_user_id: string | null
+        }
+        Insert: {
+          action: string
+          admin_id: string
+          admin_label?: string | null
+          amount?: number | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          target_label?: string | null
+          target_user_id?: string | null
+        }
+        Update: {
+          action?: string
+          admin_id?: string
+          admin_label?: string | null
+          amount?: number | null
+          created_at?: string
+          details?: Json | null
+          id?: string
+          target_label?: string | null
+          target_user_id?: string | null
+        }
+        Relationships: []
+      }
       bank_accounts: {
         Row: {
           account_name: string
@@ -47,24 +83,30 @@ export type Database = {
           body: string
           created_at: string
           id: string
+          link: string | null
           target_user_id: string | null
           title: string
+          updated_at: string
         }
         Insert: {
           active?: boolean
           body: string
           created_at?: string
           id?: string
+          link?: string | null
           target_user_id?: string | null
           title: string
+          updated_at?: string
         }
         Update: {
           active?: boolean
           body?: string
           created_at?: string
           id?: string
+          link?: string | null
           target_user_id?: string | null
           title?: string
+          updated_at?: string
         }
         Relationships: []
       }
@@ -158,6 +200,7 @@ export type Database = {
           full_name: string | null
           id: string
           last_claim_at: string | null
+          last_seen_at: string | null
           phone: string | null
           referral_code: string
           referred_by: string | null
@@ -176,6 +219,7 @@ export type Database = {
           full_name?: string | null
           id: string
           last_claim_at?: string | null
+          last_seen_at?: string | null
           phone?: string | null
           referral_code?: string
           referred_by?: string | null
@@ -194,6 +238,7 @@ export type Database = {
           full_name?: string | null
           id?: string
           last_claim_at?: string | null
+          last_seen_at?: string | null
           phone?: string | null
           referral_code?: string
           referred_by?: string | null
