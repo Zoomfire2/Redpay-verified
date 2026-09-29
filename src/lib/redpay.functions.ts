@@ -21,7 +21,7 @@ export const getMyProfile = createServerFn({ method: "GET" })
       profile = created;
     }
     // Auto apply signup bonus once
-    if (profile && !profile.signup_bonus_claimed) {
+    if (profile && !profile.signup_bonus_claimed && (profile.status ?? "active") === "active") {
       const { data: updated } = await supabase.from("profiles").update({
         balance: Number(profile.balance) + SIGNUP_BONUS,
         signup_bonus_claimed: true,
