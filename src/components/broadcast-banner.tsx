@@ -1,9 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
-import { Megaphone, X } from "lucide-react";
+import { Megaphone, X, ExternalLink } from "lucide-react";
 import { useState, useEffect } from "react";
 
 export function BroadcastBanner() {
+  const qc = useQueryClient();
   const { data: user } = useQuery({
     queryKey: ["auth-user-id"],
     queryFn: async () => (await supabase.auth.getUser()).data.user,
@@ -12,11 +13,11 @@ export function BroadcastBanner() {
   const { data: banner } = useQuery({
     queryKey: ["active-broadcast", uid],
     enabled: !!uid,
-    refetchInterval: 30_000,
+    refetchInterval: 60_000,
     queryFn: async () => {
       const { data } = await supabase
         .from("broadcasts")
-        .select("id, title, body, target_user_id, created_at")
+        .select("id, title, body, link, target_user_id, created_at, updated_at")
         .eq("active", true)
         .or(`target_user_id.is.null,target_user_id.eq.${uid}`)
         .order("target_user_id", { ascending: false, nullsFirst: false })
@@ -27,11 +28,22 @@ export function BroadcastBanner() {
     },
   });
 
+  useEffect(() => {
+    if (!uid) return;
+    const ch = supabase.channel(`broadcasts-${uid}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "broadcasts" },
+        () => qc.invalidateQueries({ queryKey: ["active-broadcast", uid] }))
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [uid, qc]);
+
   const [dismissed, setDismissed] = useState<string | null>(null);
   useEffect(() => {
     setDismissed(typeof window !== "undefined" ? sessionStorage.getItem("rp_bd") : null);
   }, []);
-  if (!banner || dismissed === banner.id) return null;
+  if (!banner) return null;
+  const key = `${banner.id}:${banner.updated_at}`;
+  if (dismissed === key) return null;
   const isPersonal = !!banner.target_user_id;
 
   return (
@@ -46,9 +58,14 @@ export function BroadcastBanner() {
             {isPersonal && <span className="text-[9px] uppercase bg-white/25 rounded-full px-2 py-0.5 font-bold">For you</span>}
           </div>
           <p className="text-xs whitespace-pre-wrap leading-relaxed mt-0.5 opacity-95">{banner.body}</p>
+          {banner.link && (
+            <a href={banner.link} target="_blank" rel="noreferrer" className="mt-1 inline-flex items-center gap-1 text-xs font-bold underline">
+              Open link <ExternalLink className="size-3" />
+            </a>
+          )}
         </div>
         <button
-          onClick={() => { sessionStorage.setItem("rp_bd", banner.id); setDismissed(banner.id); }}
+          onClick={() => { sessionStorage.setItem("rp_bd", key); setDismissed(key); }}
           className="size-7 rounded-full bg-white/15 grid place-items-center shrink-0">
           <X className="size-3.5" />
         </button>

@@ -1,6 +1,6 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AppShell, formatNaira } from "@/components/app-shell";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { getMyProfile, logRpcIntake } from "@/lib/redpay.functions";
 import { supabase } from "@/integrations/supabase/client";
@@ -29,6 +29,14 @@ function RpcFunnel() {
       return (data as Payment | null) ?? DEFAULT_PAY;
     },
   });
+  const qc = useQueryClient();
+  useEffect(() => {
+    const ch = supabase.channel("rpc-payment-settings")
+      .on("postgres_changes", { event: "*", schema: "public", table: "public_payment_settings" },
+        () => qc.invalidateQueries({ queryKey: ["rpc_payment"] }))
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [qc]);
 
   return (
     <AppShell>
