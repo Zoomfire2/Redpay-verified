@@ -79,8 +79,6 @@ export type Database = {
           customer_name: string | null
           expires_at: string | null
           failure_reason: string | null
-          flw_customer_id: string | null
-          flw_tx_id: string | null
           id: string
           last_checked_at: string | null
           purpose: string
@@ -90,10 +88,6 @@ export type Database = {
           tx_ref: string
           updated_at: string
           user_id: string
-          va_account_number: string | null
-          va_bank_name: string | null
-          va_id: string | null
-          va_note: string | null
         }
         Insert: {
           amount: number
@@ -105,8 +99,6 @@ export type Database = {
           customer_name?: string | null
           expires_at?: string | null
           failure_reason?: string | null
-          flw_customer_id?: string | null
-          flw_tx_id?: string | null
           id?: string
           last_checked_at?: string | null
           purpose?: string
@@ -116,10 +108,6 @@ export type Database = {
           tx_ref: string
           updated_at?: string
           user_id: string
-          va_account_number?: string | null
-          va_bank_name?: string | null
-          va_id?: string | null
-          va_note?: string | null
         }
         Update: {
           amount?: number
@@ -131,8 +119,6 @@ export type Database = {
           customer_name?: string | null
           expires_at?: string | null
           failure_reason?: string | null
-          flw_customer_id?: string | null
-          flw_tx_id?: string | null
           id?: string
           last_checked_at?: string | null
           purpose?: string
@@ -142,10 +128,6 @@ export type Database = {
           tx_ref?: string
           updated_at?: string
           user_id?: string
-          va_account_number?: string | null
-          va_bank_name?: string | null
-          va_id?: string | null
-          va_note?: string | null
         }
         Relationships: []
       }
