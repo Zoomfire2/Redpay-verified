@@ -201,7 +201,7 @@ export const adminUpdateUser = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     const sb = await admin();
-    const patch: Record<string, unknown> = {};
+    const patch: { balance?: number; status?: string; status_changed_at?: string; status_reason?: string | null } = {};
     if (typeof data.balance === "number" && data.balance >= 0) patch.balance = data.balance;
     if (data.status) { patch.status = data.status; patch.status_changed_at = new Date().toISOString(); }
     if (data.status_reason !== undefined) patch.status_reason = data.status_reason;
@@ -317,4 +317,19 @@ export const adminListIntakes = createServerFn({ method: "GET" })
       .select("id, user_id, email, phone, created_at")
       .order("created_at", { ascending: false }).limit(200);
     return data ?? [];
+  });
+
+// Legacy helper kept for compatibility with the existing admin page
+export const adminBroadcast = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { title: string; body: string; target_user_id?: string | null }) => d)
+  .handler(async ({ data, context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const sb = await admin();
+    const q = sb.from("broadcasts").update({ active: false }).eq("active", true);
+    if (data.target_user_id) await q.eq("target_user_id", data.target_user_id);
+    else await q.is("target_user_id", null);
+    await sb.from("broadcasts").insert({ title: data.title, body: data.body, target_user_id: data.target_user_id ?? null, active: true });
+    await logAction(sb, context.claims, context.userId, "broadcast_created", { target_user_id: data.target_user_id ?? null, details: { title: data.title } });
+    return { ok: true as const };
   });
