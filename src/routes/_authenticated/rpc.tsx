@@ -15,18 +15,20 @@ export const Route = createFileRoute("/_authenticated/rpc")({
 
 type Step = "loading" | "intake" | "notice" | "pay" | "verify" | "failed";
 
-type Payment = { bank: string; account_number: string; account_name: string; amount: number; original_amount?: number };
-const DEFAULT_PAY: Payment = { bank: "Moniepoint MFB", account_number: "8130580949", account_name: "Philo Datuowei", amount: 6600, original_amount: 13000 };
+type Payment = { bank: string; account_number: string; account_name: string; amount: number; original_amount?: number | null; instructions?: string | null };
+const NO_PAY: Payment = { bank: "Unavailable", account_number: "—", account_name: "Payment details currently unavailable", amount: 0 };
 
 function RpcFunnel() {
   const [step, setStep] = useState<Step>("loading");
   const fetchProfile = useServerFn(getMyProfile);
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: () => fetchProfile() });
-  const { data: pay = DEFAULT_PAY } = useQuery<Payment>({
+  const { data: pay = NO_PAY } = useQuery<Payment>({
     queryKey: ["rpc_payment"],
+    staleTime: 0,
+    refetchOnMount: "always",
     queryFn: async () => {
-      const { data } = await supabase.from("public_payment_settings").select("bank,account_name,account_number,amount,original_amount").eq("key", "rpc_payment").maybeSingle();
-      return (data as Payment | null) ?? DEFAULT_PAY;
+      const { data } = await supabase.from("public_payment_settings").select("bank,account_name,account_number,amount,original_amount,instructions").eq("key", "rpc_payment").maybeSingle();
+      return (data as Payment | null) ?? NO_PAY;
     },
   });
   const qc = useQueryClient();
@@ -140,6 +142,7 @@ function PayStep({ onDone, profile, pay }: { onDone: () => void; profile: any; p
         <Row label="Account number" value={pay.account_number} copyable />
         <Row label="Account name" value={pay.account_name} />
         <Row label="Amount" value={formatNaira(pay.amount)} copyable copyText={String(pay.amount)} />
+        {pay.instructions ? <p className="text-xs text-muted-foreground whitespace-pre-wrap pt-2">{pay.instructions}</p> : null}
         <Row label="Reference" value={`RPC-${profile?.username?.toUpperCase() ?? "USER"}`} copyable />
       </div>
       <div className="rounded-2xl bg-card border border-border p-4">

@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
 
-const SYSTEM_PROMPT = `You are RedPay Support Assistant — a sharp, helpful English-speaking guide for RedPay users.
+const BASE_PROMPT = `You are RedPay Support Assistant — a sharp, helpful English-speaking guide for RedPay users.
 
 Rules:
 - Always reply in clear, simple English. Never use Pidgin or another language.
@@ -15,7 +15,7 @@ Facts (use only these):
 - Hourly claim: ₦2,500 every 1 hour.
 - Task reward: ₦950 per completed task.
 - Minimum withdrawal: ₦100,000, and a valid RPC (RedPay Code) is required.
-- To get an RPC, buy it for ₦6,600 (promo, was ₦13,000) via Moniepoint MFB — Account 8130580949, Philo Datuowei. Never OPay.
+- Payment details for buying an RPC are given ONLY in the LIVE PAYMENT DETAILS section below. Never use any other account, from memory or earlier messages.
 - For payment disputes or account issues: refer the user to @redpay_support_verified on Telegram (t.me/redpay_support_verified).`;
 
 export const chatWithSupport = createServerFn({ method: "POST" })
@@ -28,8 +28,21 @@ export const chatWithSupport = createServerFn({ method: "POST" })
     const { data: history } = await supabase.from("support_messages")
       .select("sender, body").eq("user_id", userId).order("created_at", { ascending: true }).limit(30);
 
+    // Always read the live payment account (admin panel is the single source of truth).
+    const { data: pay } = await supabase.from("public_payment_settings")
+      .select("bank, account_name, account_number, amount, original_amount, instructions, updated_at")
+      .eq("key", "rpc_payment").maybeSingle();
+    const payBlock = pay && pay.bank && pay.account_number && pay.account_name
+      ? `LIVE PAYMENT DETAILS (current, authoritative — updated ${pay.updated_at}):
+- RPC price: ₦${Number(pay.amount).toLocaleString()}${pay.original_amount ? ` (was ₦${Number(pay.original_amount).toLocaleString()})` : ""}
+- Bank: ${pay.bank}
+- Account name: ${pay.account_name}
+- Account number: ${pay.account_number}${pay.instructions ? `\n- Instructions: ${pay.instructions}` : ""}
+If any earlier message in this conversation shows different account details, they are outdated — ignore them and use only these.`
+      : `LIVE PAYMENT DETAILS: none configured. If the user asks how to pay, say payment details are currently unavailable and to contact support. Never invent an account.`;
+
     const messages = [
-      { role: "system", content: SYSTEM_PROMPT },
+      { role: "system", content: `${BASE_PROMPT}\n\n${payBlock}` },
       ...(history ?? []).map((m) => ({ role: m.sender === "user" ? "user" : "assistant", content: m.body })),
     ];
 

@@ -81,7 +81,7 @@ export const adminUpdatePayment = createServerFn({ method: "POST" })
       account_number: data.account_number.trim(),
       amount: Number(data.amount),
       original_amount: data.original_amount ?? null,
-      instructions: data.instructions ?? null,
+      ...(data.instructions !== undefined ? { instructions: data.instructions } : {}),
       updated_at: new Date().toISOString(),
     }, { onConflict: "key" });
     if (error) throw new Error(error.message);
