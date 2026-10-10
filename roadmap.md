@@ -7,3 +7,4 @@
 - [ ] Route Flutterwave checkout through the supplied link and persist pending receipts against the user's deposit record
 - [ ] Show pending confirmation after receipt submission; do not auto-confirm or issue an RPC code
 - [ ] Let admins review submitted RPC receipts and validate the complete switched-payment flow
+- [ ] Verify support chat and Buy RPC switch from saved Account A to Account B without showing stale details
