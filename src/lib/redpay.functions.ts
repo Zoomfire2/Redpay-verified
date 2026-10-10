@@ -144,22 +144,19 @@ export const submitFlutterwaveRpcReceipt = createServerFn({ method: "POST" })
   .handler(async ({ data, context }) => {
     const expectedPrefix = `${context.userId}/`;
     if (!data.receiptPath.startsWith(expectedPrefix) || data.receiptPath.includes("..")) throw new Error("Invalid receipt path");
-    const { data: settings, error: settingsError } = await context.supabase.from("public_payment_settings")
-      .select("payment_mode").eq("key", "rpc_payment").maybeSingle();
-    if (settingsError) throw new Error(settingsError.message);
-    if (settings?.payment_mode !== "flutterwave") throw new Error("Flutterwave payments are not currently active");
     const { data: deposit, error: selectError } = await context.supabase.from("deposits")
       .select("id, status, receipt_path").eq("user_id", context.userId).eq("tx_ref", data.txRef)
       .eq("purpose", "rpc").eq("payment_provider", "flutterwave").maybeSingle();
     if (selectError) throw new Error(selectError.message);
     if (!deposit || deposit.status !== "PENDING") throw new Error("Pending payment was not found");
     if (deposit.receipt_path) throw new Error("A receipt has already been submitted for this payment");
-    const { error } = await context.supabase.from("deposits").update({
+    const sb = await import("@/integrations/supabase/client.server").then(({ supabaseAdmin }) => supabaseAdmin);
+    const { error } = await sb.from("deposits").update({
       receipt_path: data.receiptPath,
       receipt_submitted_at: new Date().toISOString(),
       status: "PENDING",
       credited: false,
-    }).eq("id", deposit.id).eq("user_id", context.userId);
+    }).eq("id", deposit.id).eq("user_id", context.userId).eq("status", "PENDING").is("receipt_path", null);
     if (error) throw new Error(error.message);
     return { ok: true as const };
   });
