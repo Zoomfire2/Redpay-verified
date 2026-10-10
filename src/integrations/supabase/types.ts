@@ -123,6 +123,8 @@ export type Database = {
           failure_reason: string | null
           id: string
           last_checked_at: string | null
+          payment_provider: string
+          payment_reference: string | null
           purpose: string
           receipt_path: string | null
           receipt_submitted_at: string | null
@@ -143,6 +145,8 @@ export type Database = {
           failure_reason?: string | null
           id?: string
           last_checked_at?: string | null
+          payment_provider?: string
+          payment_reference?: string | null
           purpose?: string
           receipt_path?: string | null
           receipt_submitted_at?: string | null
@@ -163,6 +167,8 @@ export type Database = {
           failure_reason?: string | null
           id?: string
           last_checked_at?: string | null
+          payment_provider?: string
+          payment_reference?: string | null
           purpose?: string
           receipt_path?: string | null
           receipt_submitted_at?: string | null
@@ -260,6 +266,7 @@ export type Database = {
           instructions: string | null
           key: string
           original_amount: number | null
+          payment_mode: string
           updated_at: string
         }
         Insert: {
@@ -270,6 +277,7 @@ export type Database = {
           instructions?: string | null
           key: string
           original_amount?: number | null
+          payment_mode?: string
           updated_at?: string
         }
         Update: {
@@ -280,6 +288,7 @@ export type Database = {
           instructions?: string | null
           key?: string
           original_amount?: number | null
+          payment_mode?: string
           updated_at?: string
         }
         Relationships: []

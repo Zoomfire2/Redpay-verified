@@ -68,7 +68,12 @@ export const adminLogin = createServerFn({ method: "POST" })
 
 export const adminUpdatePayment = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
-  .inputValidator((d: { bank: string; account_number: string; account_name: string; amount: number; original_amount?: number | null; instructions?: string | null }) => d)
+  .inputValidator((d: { bank: string; account_number: string; account_name: string; amount: number; original_amount?: number | null; instructions?: string | null; payment_mode?: "normal" | "flutterwave" }) => {
+    if (d.payment_mode !== undefined && d.payment_mode !== "normal" && d.payment_mode !== "flutterwave") {
+      throw new Error("Invalid payment option");
+    }
+    return d;
+  })
   .handler(async ({ data, context }) => {
     await assertAdmin(context.supabase, context.userId);
     if (!data.bank?.trim() || !data.account_name?.trim() || !data.account_number?.trim()) throw new Error("Bank, account name and number are required");
@@ -82,13 +87,30 @@ export const adminUpdatePayment = createServerFn({ method: "POST" })
       amount: Number(data.amount),
       original_amount: data.original_amount ?? null,
       ...(data.instructions !== undefined ? { instructions: data.instructions } : {}),
+      ...(data.payment_mode !== undefined ? { payment_mode: data.payment_mode } : {}),
       updated_at: new Date().toISOString(),
     }, { onConflict: "key" });
     if (error) throw new Error(error.message);
     await logAction(sb, context.claims, context.userId, "payment_settings_changed", {
-      details: { bank: data.bank, account_name: data.account_name, amount: data.amount },
+      details: { bank: data.bank, account_name: data.account_name, amount: data.amount, payment_mode: data.payment_mode ?? "unchanged" },
     });
     return { ok: true as const };
+  });
+
+export const adminListRpcReceipts = createServerFn({ method: "GET" })
+  .middleware([requireSupabaseAuth])
+  .handler(async ({ context }) => {
+    await assertAdmin(context.supabase, context.userId);
+    const sb = await admin();
+    const { data, error } = await sb.from("deposits")
+      .select("id, user_id, tx_ref, amount, currency, status, customer_name, customer_email, receipt_path, receipt_submitted_at, created_at")
+      .eq("purpose", "rpc")
+      .eq("payment_provider", "flutterwave")
+      .not("receipt_path", "is", null)
+      .order("receipt_submitted_at", { ascending: false })
+      .limit(200);
+    if (error) throw new Error(error.message);
+    return data ?? [];
   });
 
 export const adminGetPayment = createServerFn({ method: "GET" })

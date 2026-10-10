@@ -2,7 +2,7 @@ import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { AppShell, formatNaira } from "@/components/app-shell";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { getMyProfile, logRpcIntake } from "@/lib/redpay.functions";
+import { createFlutterwaveRpcPending, getMyProfile, logRpcIntake, submitFlutterwaveRpcReceipt } from "@/lib/redpay.functions";
 import { supabase } from "@/integrations/supabase/client";
 import { useState, useEffect } from "react";
 import { ArrowLeft, AlertTriangle, Copy, Loader2, ShieldCheck, X, CheckCircle2, Upload, Timer } from "lucide-react";
@@ -13,21 +13,29 @@ export const Route = createFileRoute("/_authenticated/rpc")({
   component: RpcFunnel,
 });
 
-type Step = "loading" | "intake" | "notice" | "pay" | "verify" | "failed";
+type Step = "loading" | "intake" | "notice" | "pay" | "verify" | "failed" | "receipt" | "pending";
 
-type Payment = { bank: string; account_number: string; account_name: string; amount: number; original_amount?: number | null; instructions?: string | null };
-const NO_PAY: Payment = { bank: "Unavailable", account_number: "—", account_name: "Payment details currently unavailable", amount: 0 };
+type Payment = { bank: string; account_number: string; account_name: string; amount: number; original_amount?: number | null; instructions?: string | null; payment_mode?: "normal" | "flutterwave" };
+const NO_PAY: Payment = { bank: "Unavailable", account_number: "—", account_name: "Payment details currently unavailable", amount: 0, payment_mode: "normal" };
+const FLUTTERWAVE_PAYMENT_LINK = "https://flutterwave.com/pay/buyrpc";
+const FLUTTERWAVE_PENDING_KEY = "redpay_flutterwave_rpc_pending";
 
 function RpcFunnel() {
   const [step, setStep] = useState<Step>("loading");
+  const [intake, setIntake] = useState({ fullName: "", email: "", phone: "" });
+  const [txRef, setTxRef] = useState("");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [receiptBusy, setReceiptBusy] = useState(false);
   const fetchProfile = useServerFn(getMyProfile);
+  const createPending = useServerFn(createFlutterwaveRpcPending);
+  const submitReceipt = useServerFn(submitFlutterwaveRpcReceipt);
   const { data: profile } = useQuery({ queryKey: ["profile"], queryFn: () => fetchProfile() });
   const { data: pay = NO_PAY } = useQuery<Payment>({
     queryKey: ["rpc_payment"],
     staleTime: 0,
     refetchOnMount: "always",
     queryFn: async () => {
-      const { data } = await supabase.from("public_payment_settings").select("bank,account_name,account_number,amount,original_amount,instructions").eq("key", "rpc_payment").maybeSingle();
+      const { data } = await supabase.from("public_payment_settings").select("bank,account_name,account_number,amount,original_amount,instructions,payment_mode").eq("key", "rpc_payment").maybeSingle();
       return (data as Payment | null) ?? NO_PAY;
     },
   });
@@ -40,6 +48,59 @@ function RpcFunnel() {
     return () => { supabase.removeChannel(ch); };
   }, [qc]);
 
+  useEffect(() => {
+    try {
+      const pending = sessionStorage.getItem(FLUTTERWAVE_PENDING_KEY);
+      if (pending) {
+        setTxRef(pending);
+        setStep("receipt");
+      }
+    } catch {
+      // Continue to the normal purchase flow when browser storage is unavailable.
+    }
+  }, []);
+
+  async function startFlutterwavePayment() {
+    try {
+      const pending = await createPending({ data: { email: intake.email, fullName: intake.fullName } });
+      setTxRef(pending.txRef);
+      sessionStorage.setItem(FLUTTERWAVE_PENDING_KEY, pending.txRef);
+      window.location.assign(FLUTTERWAVE_PAYMENT_LINK);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not start payment");
+    }
+  }
+
+  async function sendReceipt() {
+    if (!txRef || !receiptFile) return;
+    if (!/^image\/(png|jpeg|webp|heic)$|^application\/pdf$/.test(receiptFile.type)) {
+      toast.error("Upload a PNG, JPG, WEBP, HEIC, or PDF receipt");
+      return;
+    }
+    if (receiptFile.size > 10 * 1024 * 1024) {
+      toast.error("Receipt must be 10 MB or smaller");
+      return;
+    }
+    setReceiptBusy(true);
+    const safeName = receiptFile.name.replace(/[^a-zA-Z0-9._-]/g, "_").slice(-100) || "receipt";
+    const receiptPath = `${profile?.id}/rpc/${txRef}/${Date.now()}-${safeName}`;
+    try {
+      const { error: uploadError } = await supabase.storage.from("receipts").upload(receiptPath, receiptFile, {
+        contentType: receiptFile.type,
+        upsert: false,
+      });
+      if (uploadError) throw uploadError;
+      await submitReceipt({ data: { txRef, receiptPath } });
+      setStep("pending");
+      try { sessionStorage.removeItem(FLUTTERWAVE_PENDING_KEY); } catch { /* no-op */ }
+      toast.success("Receipt submitted successfully");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not submit receipt");
+    } finally {
+      setReceiptBusy(false);
+    }
+  }
+
   return (
     <AppShell>
       <header className="p-4 flex items-center gap-3">
@@ -48,11 +109,13 @@ function RpcFunnel() {
       </header>
 
       {step === "loading" && <LoadingStep onDone={() => setStep("intake")} label="Preparing your RPC purchase…" />}
-      {step === "intake" && <IntakeStep profile={profile} pay={pay} onDone={() => setStep("notice")} />}
-      {step === "notice" && <NoticeStep onContinue={() => setStep("pay")} />}
+      {step === "intake" && <IntakeStep profile={profile} pay={pay} onDone={(details) => { setIntake(details); setStep("notice"); }} />}
+      {step === "notice" && <NoticeStep onContinue={() => pay.payment_mode === "flutterwave" ? void startFlutterwavePayment() : setStep("pay")} />}
       {step === "pay" && <PayStep pay={pay} onDone={() => setStep("verify")} profile={profile} />}
       {step === "verify" && <VerifyStep onDone={() => setStep("failed")} />}
       {step === "failed" && <FailedStep onRetry={() => setStep("pay")} />}
+      {step === "receipt" && <FlutterwaveReceiptStep txRef={txRef} file={receiptFile} busy={receiptBusy} onFile={setReceiptFile} onSubmit={() => void sendReceipt()} />}
+      {step === "pending" && <FlutterwavePendingStep />}
     </AppShell>
   );
 }
@@ -68,7 +131,7 @@ function LoadingStep({ onDone, label }: { onDone: () => void; label: string }) {
   );
 }
 
-function IntakeStep({ profile, pay, onDone }: { profile: any; pay: Payment; onDone: () => void }) {
+function IntakeStep({ profile, pay, onDone }: { profile: any; pay: Payment; onDone: (details: { fullName: string; email: string; phone: string }) => void }) {
   const [form, setForm] = useState({
     full_name: profile?.full_name ?? "",
     email: profile?.email ?? "",
@@ -79,7 +142,7 @@ function IntakeStep({ profile, pay, onDone }: { profile: any; pay: Payment; onDo
   return (
     <form onSubmit={async e => {
       e.preventDefault(); setLoading(true);
-      try { await log({ data: { email: form.email, phone: form.phone } }); onDone(); }
+      try { await log({ data: { email: form.email, phone: form.phone } }); onDone({ fullName: form.full_name, email: form.email, phone: form.phone }); }
       finally { setLoading(false); }
     }} className="p-4 space-y-3 animate-fade-in">
       <div className="rounded-2xl bg-card border border-border p-4 text-sm space-y-1">
@@ -121,7 +184,7 @@ function NoticeStep({ onContinue }: { onContinue: () => void }) {
           <li className="flex gap-2"><CheckCircle2 className="size-4 text-success shrink-0 mt-0.5" /> Use only the account shown on the next screen.</li>
           <li className="flex gap-2"><CheckCircle2 className="size-4 text-success shrink-0 mt-0.5" /> Keep your receipt / proof of payment.</li>
         </ul>
-        <button onClick={onContinue} className="mt-6 w-full py-3 rounded-full gradient-red font-semibold text-primary-foreground shadow-glow">I understand — Continue</button>
+        <button onClick={onContinue} className="mt-6 w-full py-3 rounded-full gradient-red font-semibold text-primary-foreground shadow-glow">I Understand</button>
       </div>
     </div>
   );
@@ -156,9 +219,42 @@ function PayStep({ onDone, profile, pay }: { onDone: () => void; profile: any; p
       <button onClick={onDone} className="w-full py-3 rounded-full gradient-red font-semibold text-primary-foreground shadow-glow">
         I have paid — Verify now
       </button>
-      <p className="text-[11px] text-center text-muted-foreground">RPC is generated automatically after payment confirmation.</p>
+      <p className="text-[11px] text-center text-muted-foreground">RPC is issued only after payment confirmation.</p>
     </div>
   );
+}
+
+function FlutterwaveReceiptStep({ txRef, file, busy, onFile, onSubmit }: { txRef: string; file: File | null; busy: boolean; onFile: (file: File | null) => void; onSubmit: () => void }) {
+  return <div className="p-4 space-y-4 animate-fade-in">
+    <div className="rounded-2xl border border-border bg-card p-5">
+      <p className="text-xs font-semibold uppercase text-muted-foreground">Flutterwave payment</p>
+      <h2 className="mt-2 text-lg font-bold">Submit your payment receipt</h2>
+      <p className="mt-2 text-sm text-muted-foreground">Your payment is not confirmed when you return from checkout. Upload your receipt for support to review.</p>
+      <p className="mt-3 break-all font-mono text-xs">Reference: {txRef}</p>
+    </div>
+    <label className="block rounded-2xl border border-border bg-card p-4">
+      <span className="text-xs font-semibold text-muted-foreground">Receipt file</span>
+      <span className="mt-3 flex min-h-12 items-center gap-2 text-sm"><Upload className="size-4 text-primary" />{file?.name ?? "Choose an image or PDF receipt"}</span>
+      <input type="file" accept="image/png,image/jpeg,image/webp,image/heic,application/pdf" className="mt-2 block w-full text-sm" onChange={e => onFile(e.target.files?.[0] ?? null)} />
+    </label>
+    <button disabled={!file || busy} onClick={onSubmit} className="w-full rounded-full gradient-red py-3 font-semibold text-primary-foreground disabled:opacity-60 inline-flex items-center justify-center gap-2">
+      {busy && <Loader2 className="size-4 animate-spin" />}{busy ? "Submitting…" : "Submit receipt"}
+    </button>
+  </div>;
+}
+
+function FlutterwavePendingStep() {
+  return <div className="p-4 animate-fade-in">
+    <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-6 text-center">
+      <AlertTriangle className="mx-auto size-10 text-yellow-400" />
+      <h2 className="mt-4 text-lg font-bold">PAYMENT NOT CONFIRMED</h2>
+      <p className="mt-2 text-sm font-semibold">Your payment is awaiting confirmation.</p>
+      <p className="mt-2 text-sm text-muted-foreground">Please DM customer support for assistance.</p>
+      <Link to="/support" className="mt-5 w-full rounded-full gradient-red py-3 font-semibold text-primary-foreground inline-flex items-center justify-center gap-2">
+        <ShieldCheck className="size-4" /> Contact support
+      </Link>
+    </div>
+  </div>;
 }
 
 function VerifyStep({ onDone }: { onDone: () => void }) {
