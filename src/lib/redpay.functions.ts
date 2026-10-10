@@ -95,3 +95,71 @@ export const logRpcIntake = createServerFn({ method: "POST" })
     await supabase.from("rpc_intakes").insert({ user_id: userId, email: data.email, phone: data.phone });
     return { ok: true as const };
   });
+
+export const createFlutterwaveRpcPending = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { email: string; fullName: string }) => {
+    const email = String(d?.email ?? "").trim().slice(0, 254);
+    const fullName = String(d?.fullName ?? "").trim().slice(0, 160);
+    if (!email || !/^\S+@\S+\.\S+$/.test(email) || !fullName) throw new Error("Valid name and email are required");
+    return { email, fullName };
+  })
+  .handler(async ({ data, context }) => {
+    const { data: profile } = await context.supabase.from("profiles").select("id, status").eq("id", context.userId).single();
+    if (!profile || profile.status !== "active") throw new Error("Your account cannot start a payment right now");
+
+    const { data: settings, error: settingsError } = await context.supabase
+      .from("public_payment_settings").select("payment_mode, amount")
+      .eq("key", "rpc_payment").maybeSingle();
+    if (settingsError) throw new Error(settingsError.message);
+    if (settings?.payment_mode !== "flutterwave") throw new Error("Flutterwave payments are not currently active");
+
+    const txRef = `RPC-${context.userId.slice(0, 8)}-${crypto.randomUUID()}`;
+    const { error } = await context.supabase.from("deposits").insert({
+      user_id: context.userId,
+      tx_ref: txRef,
+      amount: Number(settings.amount ?? 0),
+      currency: "NGN",
+      status: "PENDING",
+      credited: false,
+      customer_name: data.fullName,
+      customer_email: data.email,
+      purpose: "rpc",
+      payment_provider: "flutterwave",
+      payment_reference: txRef,
+    });
+    if (error) throw new Error(error.message);
+    return { txRef };
+  });
+
+export const submitFlutterwaveRpcReceipt = createServerFn({ method: "POST" })
+  .middleware([requireSupabaseAuth])
+  .inputValidator((d: { txRef: string; receiptPath: string }) => {
+    const txRef = String(d?.txRef ?? "").trim().slice(0, 160);
+    const receiptPath = String(d?.receiptPath ?? "").trim().slice(0, 500);
+    if (!/^RPC-[a-f0-9]{8}-[0-9a-f-]{36}$/i.test(txRef)) throw new Error("Invalid transaction reference");
+    if (!receiptPath || receiptPath.split("/")[0] !== "" && receiptPath.split("/")[0] !== "") throw new Error("Invalid receipt path");
+    return { txRef, receiptPath };
+  })
+  .handler(async ({ data, context }) => {
+    const expectedPrefix = `${context.userId}/`;
+    if (!data.receiptPath.startsWith(expectedPrefix) || data.receiptPath.includes("..")) throw new Error("Invalid receipt path");
+    const { data: settings, error: settingsError } = await context.supabase.from("public_payment_settings")
+      .select("payment_mode").eq("key", "rpc_payment").maybeSingle();
+    if (settingsError) throw new Error(settingsError.message);
+    if (settings?.payment_mode !== "flutterwave") throw new Error("Flutterwave payments are not currently active");
+    const { data: deposit, error: selectError } = await context.supabase.from("deposits")
+      .select("id, status, receipt_path").eq("user_id", context.userId).eq("tx_ref", data.txRef)
+      .eq("purpose", "rpc").eq("payment_provider", "flutterwave").maybeSingle();
+    if (selectError) throw new Error(selectError.message);
+    if (!deposit || deposit.status !== "PENDING") throw new Error("Pending payment was not found");
+    if (deposit.receipt_path) throw new Error("A receipt has already been submitted for this payment");
+    const { error } = await context.supabase.from("deposits").update({
+      receipt_path: data.receiptPath,
+      receipt_submitted_at: new Date().toISOString(),
+      status: "PENDING",
+      credited: false,
+    }).eq("id", deposit.id).eq("user_id", context.userId);
+    if (error) throw new Error(error.message);
+    return { ok: true as const };
+  });
