@@ -6,7 +6,7 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   adminLogin, adminStats, adminListUsers, adminUpdateUser, adminListWithdrawals, adminListIntakes,
   adminUpdatePayment, adminAddTask, adminRemoveTask, adminAdjustBalance,
-  adminBroadcast, adminDeleteBroadcast, adminListBroadcasts,
+  adminBroadcast, adminDeleteBroadcast, adminListBroadcasts, adminListRpcReceipts,
 } from "@/lib/admin.functions";
 import { toast } from "sonner";
 import { Shield, Users, Wallet, Zap, LogOut, Loader2, Trash2, Radio, Settings, ListTodo } from "lucide-react";
@@ -65,7 +65,7 @@ function AdminGate() {
   );
 }
 
-type Tab = "users" | "withdrawals" | "intakes" | "tasks" | "payment" | "broadcast";
+type Tab = "users" | "withdrawals" | "intakes" | "tasks" | "payment" | "broadcast" | "receipts";
 
 function AdminDashboard() {
   const [tab, setTab] = useState<Tab>("users");
@@ -89,7 +89,7 @@ function AdminDashboard() {
         <div className="flex gap-4 text-sm min-w-max">
           {([
             ["users", Users], ["withdrawals", Wallet], ["intakes", Zap],
-            ["tasks", ListTodo], ["payment", Settings], ["broadcast", Radio],
+            ["tasks", ListTodo], ["payment", Settings], ["broadcast", Radio], ["receipts", Wallet],
           ] as [Tab, any][]).map(([t, Icon]) => (
             <button key={t} onClick={() => setTab(t)} className={`py-3 border-b-2 inline-flex items-center gap-1 ${tab === t ? "border-primary text-primary" : "border-transparent text-muted-foreground"}`}>
               <Icon className="size-3.5" /> {t.charAt(0).toUpperCase() + t.slice(1)}
@@ -105,6 +105,7 @@ function AdminDashboard() {
         {tab === "tasks" && <TasksTab />}
         {tab === "payment" && <PaymentTab />}
         {tab === "broadcast" && <BroadcastTab />}
+        {tab === "receipts" && <RpcReceiptsTab />}
       </div>
     </div>
   );
@@ -298,15 +299,16 @@ function TasksTab() {
 function PaymentTab() {
   const { data: current } = useQuery({
     queryKey: ["rpc_payment_admin"],
-    queryFn: async () => (await supabase.from("public_payment_settings").select("bank,account_name,account_number,amount,original_amount").eq("key", "rpc_payment").maybeSingle()).data as any,
+    queryFn: async () => (await supabase.from("public_payment_settings").select("bank,account_name,account_number,amount,original_amount,instructions,payment_mode").eq("key", "rpc_payment").maybeSingle()).data as any,
   });
-  const [form, setForm] = useState<any>({ bank: "Moniepoint MFB", account_number: "", account_name: "", amount: 6600, original_amount: 13000 });
+  const [form, setForm] = useState<any>({ bank: "", account_number: "", account_name: "", amount: 0, original_amount: "", instructions: "", payment_mode: "normal" });
   useEffect(() => { if (current) setForm(current); }, [current]);
   const update = useServerFn(adminUpdatePayment);
   const mut = useMutation({
     mutationFn: () => update({ data: {
       bank: form.bank, account_number: form.account_number, account_name: form.account_name,
       amount: Number(form.amount), original_amount: Number(form.original_amount ?? 0) || undefined,
+      instructions: form.instructions || null, payment_mode: form.payment_mode,
     }}),
     onSuccess: () => toast.success("Payment details updated"),
   });
@@ -314,12 +316,24 @@ function PaymentTab() {
   return (
     <form onSubmit={e => { e.preventDefault(); mut.mutate(); }} className="rounded-2xl border border-border bg-card p-4 space-y-2 max-w-md">
       <p className="text-xs font-semibold text-muted-foreground uppercase">RPC payment destination</p>
+      <label className="text-xs text-muted-foreground">Active payment option</label>
+      <select className="input w-full" value={form.payment_mode} onChange={e => setForm({ ...form, payment_mode: e.target.value })}>
+        <option value="normal">Normal Payment Option</option>
+        <option value="flutterwave">Flutterwave Payment Link</option>
+      </select>
+      {form.payment_mode === "flutterwave" && <div className="rounded-md border border-border p-3 text-sm space-y-1">
+        <p className="font-semibold">Flutterwave checkout</p>
+        <a className="text-primary underline break-all" href="https://flutterwave.com/pay/buyrpc" target="_blank" rel="noreferrer">https://flutterwave.com/pay/buyrpc</a>
+        <p className="text-xs text-muted-foreground">Configure the payment link to return customers to this site's /rpc page after checkout.</p>
+      </div>}
       <label className="text-xs text-muted-foreground">Bank</label>
       <input className="input w-full" value={form.bank} onChange={e => setForm({ ...form, bank: e.target.value })} />
       <label className="text-xs text-muted-foreground">Account number</label>
       <input className="input w-full" value={form.account_number} onChange={e => setForm({ ...form, account_number: e.target.value })} />
       <label className="text-xs text-muted-foreground">Account name</label>
       <input className="input w-full" value={form.account_name} onChange={e => setForm({ ...form, account_name: e.target.value })} />
+      <label className="text-xs text-muted-foreground">Payment instructions</label>
+      <textarea className="input w-full" rows={3} value={form.instructions ?? ""} onChange={e => setForm({ ...form, instructions: e.target.value })} />
       <div className="grid grid-cols-2 gap-2">
         <div>
           <label className="text-xs text-muted-foreground">Amount (₦)</label>
@@ -334,6 +348,40 @@ function PaymentTab() {
       <StyleTag />
     </form>
   );
+}
+
+function RpcReceiptsTab() {
+  const list = useServerFn(adminListRpcReceipts);
+  const { data: receipts = [], isLoading } = useQuery({ queryKey: ["admin-rpc-receipts"], queryFn: () => list() });
+  const [opening, setOpening] = useState<string | null>(null);
+  async function openReceipt(id: string, path: string) {
+    setOpening(id);
+    try {
+      const { data, error } = await supabase.storage.from("receipts").createSignedUrl(path, 60);
+      if (error || !data?.signedUrl) throw error ?? new Error("Receipt could not be opened");
+      window.open(data.signedUrl, "_blank", "noopener,noreferrer");
+    } catch {
+      toast.error("Could not open receipt");
+    } finally {
+      setOpening(null);
+    }
+  }
+  if (isLoading) return <p className="text-sm text-muted-foreground">Loading receipts…</p>;
+  if (!receipts.length) return <p className="text-sm text-muted-foreground">No Flutterwave RPC receipts submitted.</p>;
+  return <div className="rounded-2xl border border-border bg-card overflow-x-auto">
+    <table className="w-full text-sm">
+      <thead className="text-xs text-muted-foreground bg-background/50"><tr>{["Submitted", "User", "Email", "Amount", "Reference", "Status", "Receipt"].map(h => <th key={h} className="text-left px-3 py-2">{h}</th>)}</tr></thead>
+      <tbody>{receipts.map((r: any) => <tr key={r.id} className="border-t border-border">
+        <td className="px-3 py-2 text-xs">{r.receipt_submitted_at ? new Date(r.receipt_submitted_at).toLocaleString() : "—"}</td>
+        <td className="px-3 py-2 font-mono text-xs">{r.user_id.slice(0, 8)}</td>
+        <td className="px-3 py-2">{r.customer_email ?? "—"}</td>
+        <td className="px-3 py-2">₦{Number(r.amount).toLocaleString()}</td>
+        <td className="px-3 py-2 font-mono text-xs">{r.tx_ref}</td>
+        <td className="px-3 py-2">{r.status}</td>
+        <td className="px-3 py-2"><button disabled={opening === r.id} className="text-primary underline" onClick={() => openReceipt(r.id, r.receipt_path)}>{opening === r.id ? "Opening…" : "View"}</button></td>
+      </tr>)}</tbody>
+    </table>
+  </div>;
 }
 
 function BroadcastTab() {

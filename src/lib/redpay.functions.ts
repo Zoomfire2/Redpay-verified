@@ -138,7 +138,7 @@ export const submitFlutterwaveRpcReceipt = createServerFn({ method: "POST" })
     const txRef = String(d?.txRef ?? "").trim().slice(0, 160);
     const receiptPath = String(d?.receiptPath ?? "").trim().slice(0, 500);
     if (!/^RPC-[a-f0-9]{8}-[0-9a-f-]{36}$/i.test(txRef)) throw new Error("Invalid transaction reference");
-    if (!receiptPath || receiptPath.split("/")[0] !== "" && receiptPath.split("/")[0] !== "") throw new Error("Invalid receipt path");
+    if (!receiptPath) throw new Error("Invalid receipt path");
     return { txRef, receiptPath };
   })
   .handler(async ({ data, context }) => {
