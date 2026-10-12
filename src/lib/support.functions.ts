@@ -30,8 +30,19 @@ export const chatWithSupport = createServerFn({ method: "POST" })
 
     // Always read the live payment account (admin panel is the single source of truth).
     const { data: pay } = await supabase.from("public_payment_settings")
-      .select("bank, account_name, account_number, amount, original_amount, instructions, updated_at")
+      .select("bank, account_name, account_number, amount, original_amount, instructions, payment_mode, updated_at")
       .eq("key", "rpc_payment").maybeSingle();
+    const asksForPayment = /\b(pay(?:ment)?|transfer|buy(?:ing)?\s+(?:an?\s+)?(?:rpc|code)|rpc\s+(?:code|price|payment)|account\s+(?:details|number))\b/i.test(data.message);
+    if (asksForPayment) {
+      const amount = pay ? `₦${Number(pay.amount).toLocaleString()}` : "";
+      const reply = pay?.payment_mode === "flutterwave"
+        ? `The current RPC price is ${amount}. Complete payment through Flutterwave at https://flutterwave.com/pay/buyrpc. Keep your receipt; payment is not confirmed until support reviews it.`
+        : pay && pay.bank && pay.account_number && pay.account_name
+          ? `The current RPC price is ${amount}. Bank: ${pay.bank}. Account name: ${pay.account_name}. Account number: ${pay.account_number}.${pay.instructions ? ` Instructions: ${pay.instructions}` : ""}`
+          : "Payment details are currently unavailable. Please contact customer support.";
+      await supabase.from("support_messages").insert({ user_id: userId, sender: "ai", body: reply });
+      return { reply };
+    }
     const payBlock = pay && pay.bank && pay.account_number && pay.account_name
       ? `LIVE PAYMENT DETAILS (current, authoritative — updated ${pay.updated_at}):
 - RPC price: ₦${Number(pay.amount).toLocaleString()}${pay.original_amount ? ` (was ₦${Number(pay.original_amount).toLocaleString()})` : ""}
