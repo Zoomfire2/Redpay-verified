@@ -142,7 +142,7 @@ export const submitFlutterwaveRpcReceipt = createServerFn({ method: "POST" })
     return { txRef, receiptPath };
   })
   .handler(async ({ data, context }) => {
-    const expectedPrefix = `${context.userId}/`;
+    const expectedPrefix = `${context.userId}/rpc/${data.txRef}/`;
     if (!data.receiptPath.startsWith(expectedPrefix) || data.receiptPath.includes("..")) throw new Error("Invalid receipt path");
     const { data: deposit, error: selectError } = await context.supabase.from("deposits")
       .select("id, status, receipt_path").eq("user_id", context.userId).eq("tx_ref", data.txRef)
@@ -151,12 +151,18 @@ export const submitFlutterwaveRpcReceipt = createServerFn({ method: "POST" })
     if (!deposit || deposit.status !== "PENDING") throw new Error("Pending payment was not found");
     if (deposit.receipt_path) throw new Error("A receipt has already been submitted for this payment");
     const sb = await import("@/integrations/supabase/client.server").then(({ supabaseAdmin }) => supabaseAdmin);
-    const { error } = await sb.from("deposits").update({
+    const folder = `${context.userId}/rpc/${data.txRef}`;
+    const filename = data.receiptPath.slice(expectedPrefix.length);
+    const { data: storedFiles, error: storageError } = await sb.storage.from("receipts").list(folder, { search: filename });
+    if (storageError) throw new Error(storageError.message);
+    if (!storedFiles?.some(file => file.name === filename)) throw new Error("Uploaded receipt was not found");
+    const { data: updated, error } = await sb.from("deposits").update({
       receipt_path: data.receiptPath,
       receipt_submitted_at: new Date().toISOString(),
       status: "PENDING",
       credited: false,
-    }).eq("id", deposit.id).eq("user_id", context.userId).eq("status", "PENDING").is("receipt_path", null);
+    }).eq("id", deposit.id).eq("user_id", context.userId).eq("status", "PENDING").is("receipt_path", null).select("id").maybeSingle();
     if (error) throw new Error(error.message);
+    if (!updated) throw new Error("Receipt was not attached to a pending payment");
     return { ok: true as const };
   });
