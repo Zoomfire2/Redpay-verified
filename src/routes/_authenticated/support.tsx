@@ -3,6 +3,7 @@ import { AppShell } from "@/components/app-shell";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
 import { chatWithSupport, getSupportHistory } from "@/lib/support.functions";
+import { supabase } from "@/integrations/supabase/client";
 import { useEffect, useRef, useState } from "react";
 import { ArrowLeft, Send, Bot, User as UserIcon, Loader2, MessageCircle } from "lucide-react";
 
@@ -26,6 +27,14 @@ function Support() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
   }, [history.length, mut.isPending]);
+  useEffect(() => {
+    const channel = supabase.channel("support-payment-settings")
+      .on("postgres_changes", { event: "*", schema: "public", table: "public_payment_settings", filter: "key=eq.rpc_payment" }, () => {
+        void qc.invalidateQueries({ queryKey: ["support-history"] });
+      })
+      .subscribe();
+    return () => { void supabase.removeChannel(channel); };
+  }, [qc]);
 
   return (
     <AppShell>

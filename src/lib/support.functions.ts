@@ -18,6 +18,18 @@ Facts (use only these):
 - Payment details for buying an RPC are given ONLY in the LIVE PAYMENT DETAILS section below. Never use any other account, from memory or earlier messages.
 - For payment disputes or account issues: refer the user to @redpay_support_verified on Telegram (t.me/redpay_support_verified).`;
 
+function currentPaymentReply(pay: any): string {
+  if (pay?.payment_mode === "flutterwave") {
+    return `The current RPC price is ₦${Number(pay.amount ?? 0).toLocaleString()}. Complete payment through Flutterwave at https://flutterwave.com/pay/buyrpc. Keep your receipt; payment is not confirmed until support reviews it.`;
+  }
+  if (pay?.bank && pay?.account_name && pay?.account_number) {
+    return `The current RPC price is ₦${Number(pay.amount ?? 0).toLocaleString()}. Bank: ${pay.bank}. Account name: ${pay.account_name}. Account number: ${pay.account_number}.${pay.instructions ? ` Instructions: ${pay.instructions}` : ""}`;
+  }
+  return "Payment details are currently unavailable. Please contact customer support.";
+}
+
+const hasPaymentDetails = (body: string) => /\b(bank|account\s+(?:number|name|details)|transfer\s+to|payment\s+details|flutterwave)\b/i.test(body);
+
 export const chatWithSupport = createServerFn({ method: "POST" })
   .middleware([requireSupabaseAuth])
   .inputValidator((d: { message: string }) => d)
@@ -30,8 +42,14 @@ export const chatWithSupport = createServerFn({ method: "POST" })
 
     // Always read the live payment account (admin panel is the single source of truth).
     const { data: pay } = await supabase.from("public_payment_settings")
-      .select("bank, account_name, account_number, amount, original_amount, instructions, updated_at")
+      .select("bank, account_name, account_number, amount, original_amount, instructions, payment_mode, updated_at")
       .eq("key", "rpc_payment").maybeSingle();
+    const asksForPayment = /\b(pay(?:ment)?|transfer|buy(?:ing)?\s+(?:an?\s+)?(?:rpc|code)|rpc\s+(?:code|price|payment)|account\s+(?:details|number))\b/i.test(data.message);
+    if (asksForPayment) {
+      const reply = currentPaymentReply(pay);
+      await supabase.from("support_messages").insert({ user_id: userId, sender: "ai", body: reply });
+      return { reply };
+    }
     const payBlock = pay && pay.bank && pay.account_number && pay.account_name
       ? `LIVE PAYMENT DETAILS (current, authoritative — updated ${pay.updated_at}):
 - RPC price: ₦${Number(pay.amount).toLocaleString()}${pay.original_amount ? ` (was ₦${Number(pay.original_amount).toLocaleString()})` : ""}
@@ -67,8 +85,17 @@ If any earlier message in this conversation shows different account details, the
 export const getSupportHistory = createServerFn({ method: "GET" })
   .middleware([requireSupabaseAuth])
   .handler(async ({ context }) => {
-    const { data } = await context.supabase.from("support_messages")
+    const [{ data }, { data: pay }] = await Promise.all([
+      context.supabase.from("support_messages")
       .select("id, sender, body, created_at").eq("user_id", context.userId)
-      .order("created_at", { ascending: true }).limit(100);
-    return data ?? [];
+      .order("created_at", { ascending: true }).limit(100),
+      context.supabase.from("public_payment_settings")
+        .select("bank, account_name, account_number, amount, instructions, payment_mode")
+        .eq("key", "rpc_payment").maybeSingle(),
+    ]);
+    return (data ?? []).map((message) =>
+      message.sender === "ai" && hasPaymentDetails(message.body)
+        ? { ...message, body: currentPaymentReply(pay) }
+        : message,
+    );
   });

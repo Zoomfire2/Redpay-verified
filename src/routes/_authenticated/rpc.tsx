@@ -26,6 +26,7 @@ function RpcFunnel() {
   const [txRef, setTxRef] = useState("");
   const [receiptFile, setReceiptFile] = useState<File | null>(null);
   const [receiptBusy, setReceiptBusy] = useState(false);
+  const [returnChecked, setReturnChecked] = useState(false);
   const fetchProfile = useServerFn(getMyProfile);
   const createPending = useServerFn(createFlutterwaveRpcPending);
   const submitReceipt = useServerFn(submitFlutterwaveRpcReceipt);
@@ -57,6 +58,8 @@ function RpcFunnel() {
       }
     } catch {
       // Continue to the normal purchase flow when browser storage is unavailable.
+    } finally {
+      setReturnChecked(true);
     }
   }, []);
 
@@ -108,7 +111,7 @@ function RpcFunnel() {
         <h1 className="text-lg font-bold">Buy RPC</h1>
       </header>
 
-      {step === "loading" && <LoadingStep onDone={() => setStep("intake")} label="Preparing your RPC purchase…" />}
+      {step === "loading" && returnChecked && <LoadingStep onDone={() => setStep("intake")} label="Preparing your RPC purchase…" />}
       {step === "intake" && <IntakeStep profile={profile} pay={pay} onDone={(details) => { setIntake(details); setStep("notice"); }} />}
       {step === "notice" && <NoticeStep onContinue={() => pay.payment_mode === "flutterwave" ? void startFlutterwavePayment() : setStep("pay")} />}
       {step === "pay" && <PayStep pay={pay} onDone={() => setStep("verify")} profile={profile} />}

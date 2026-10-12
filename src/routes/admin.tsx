@@ -297,6 +297,7 @@ function TasksTab() {
 }
 
 function PaymentTab() {
+  const [returnUrl, setReturnUrl] = useState("");
   const { data: current } = useQuery({
     queryKey: ["rpc_payment_admin"],
     queryFn: async () => (await supabase.from("public_payment_settings").select("bank,account_name,account_number,amount,original_amount,instructions,payment_mode").eq("key", "rpc_payment").maybeSingle()).data as any,
@@ -312,6 +313,7 @@ function PaymentTab() {
     }}),
     onSuccess: () => toast.success("Payment details updated"),
   });
+  useEffect(() => { setReturnUrl(`${window.location.origin}/rpc`); }, []);
 
   return (
     <form onSubmit={e => { e.preventDefault(); mut.mutate(); }} className="rounded-2xl border border-border bg-card p-4 space-y-2 max-w-md">
@@ -324,7 +326,8 @@ function PaymentTab() {
       {form.payment_mode === "flutterwave" && <div className="rounded-md border border-border p-3 text-sm space-y-1">
         <p className="font-semibold">Flutterwave checkout</p>
         <a className="text-primary underline break-all" href="https://flutterwave.com/pay/buyrpc" target="_blank" rel="noreferrer">https://flutterwave.com/pay/buyrpc</a>
-        <p className="text-xs text-muted-foreground">Configure the payment link to return customers to this site's /rpc page after checkout.</p>
+        <p className="text-xs text-muted-foreground">Set the Flutterwave payment link's return URL to:</p>
+        <code className="block break-all rounded bg-background p-2 text-xs">{returnUrl || "Loading return URL…"}</code>
       </div>}
       <label className="text-xs text-muted-foreground">Bank</label>
       <input className="input w-full" value={form.bank} onChange={e => setForm({ ...form, bank: e.target.value })} />
