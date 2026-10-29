@@ -1,6 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { requireSupabaseAuth } from "@/integrations/supabase/auth-middleware";
-import { currentPaymentReply, isPaymentDetailsReply } from "@/lib/payment-details";
+import { currentPaymentReply, refreshPaymentHistory } from "@/lib/payment-details";
 
 const BASE_PROMPT = `You are RedPay Support Assistant — a sharp, helpful English-speaking guide for RedPay users.
 
@@ -82,9 +82,5 @@ export const getSupportHistory = createServerFn({ method: "GET" })
         .select("bank, account_name, account_number, amount, instructions, payment_mode")
         .eq("key", "rpc_payment").maybeSingle(),
     ]);
-    return (data ?? []).map((message) =>
-      message.sender === "ai" && isPaymentDetailsReply(message.body)
-        ? { ...message, body: currentPaymentReply(pay) }
-        : message,
-    );
+    return refreshPaymentHistory(data ?? [], pay);
   });

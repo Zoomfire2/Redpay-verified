@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { currentPaymentReply, isPaymentDetailsReply } from "./payment-details";
+import { currentPaymentReply, isPaymentDetailsReply, refreshPaymentHistory } from "./payment-details";
 
 describe("current payment details", () => {
   it("uses the latest saved account details when composing a reply", () => {
@@ -15,6 +15,10 @@ describe("current payment details", () => {
     expect(latestReply).not.toContain("Bank A");
     expect(latestReply).not.toContain("111");
     expect(isPaymentDetailsReply(oldReply)).toBe(true);
+
+    const history = refreshPaymentHistory([{ id: "reply-1", sender: "ai", body: oldReply }], accountB);
+    expect(history[0]?.body).toBe(latestReply);
+    expect(history[0]?.body).not.toContain("Account A");
   });
 
   it("does not invent payment details when no account is configured", () => {

@@ -20,3 +20,14 @@ export function currentPaymentReply(pay: CurrentPaymentSettings | null | undefin
 export function isPaymentDetailsReply(body: string): boolean {
   return /\b(bank|account\s+(?:number|name|details)|transfer\s+to|payment\s+details|flutterwave)\b/i.test(body);
 }
+
+export function refreshPaymentHistory<T extends { sender: string; body: string }>(
+  messages: T[],
+  pay: CurrentPaymentSettings | null | undefined,
+) {
+  return messages.map((message) =>
+    message.sender === "ai" && isPaymentDetailsReply(message.body)
+      ? { ...message, body: currentPaymentReply(pay) }
+      : message,
+  );
+}
