@@ -4,7 +4,7 @@ export type CurrentPaymentSettings = {
   account_number?: string | null;
   amount?: number | string | null;
   instructions?: string | null;
-  payment_mode?: "normal" | "flutterwave" | null;
+  payment_mode?: string | null;
 };
 
 export function currentPaymentReply(pay: CurrentPaymentSettings | null | undefined): string {

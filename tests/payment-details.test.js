@@ -1,5 +1,5 @@
 import { describe, expect, it } from "bun:test";
-import { currentPaymentReply, isPaymentDetailsReply, refreshPaymentHistory } from "./payment-details";
+import { currentPaymentReply, isPaymentDetailsReply, refreshPaymentHistory } from "../src/lib/payment-details";
 
 describe("current payment details", () => {
   it("uses the latest saved account details when composing a reply", () => {
