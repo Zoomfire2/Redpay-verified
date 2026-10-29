@@ -8,4 +8,5 @@
 - [x] Show pending confirmation after receipt submission; do not auto-confirm or issue an RPC code
 - [x] Add admin review access for submitted RPC receipts
 - [ ] Validate the complete switched-payment and receipt flow — blocked until an authenticated preview session is available
-- [ ] Verify support chat and Buy RPC switch from saved Account A to Account B without showing stale details — blocked until an authenticated preview session is available
+- [x] Add an automated Account A-to-B check and refresh old payment replies from the current saved account
+- [ ] Verify the signed-in Account A-to-B support chat and Buy RPC flow — blocked until an authenticated preview session is available
