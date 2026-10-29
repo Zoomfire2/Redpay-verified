@@ -50,7 +50,7 @@ If any earlier message in this conversation shows different account details, the
 
     const messages = [
       { role: "system", content: `${BASE_PROMPT}\n\n${payBlock}` },
-      ...(history ?? []).map((m) => ({ role: m.sender === "user" ? "user" : "assistant", content: m.body })),
+      ...refreshPaymentHistory(history ?? [], pay).map((m) => ({ role: m.sender === "user" ? "user" : "assistant", content: m.body })),
     ];
 
     const key = process.env.LOVABLE_API_KEY;
